@@ -1,0 +1,333 @@
+ContextMap InsuranceContextMap {
+
+  
+    contains IdentityAndAccessContext
+    contains CustomerContext
+    contains VitalityContext
+    contains IndividualLifeContext
+    contains CorporateSolutionContext
+    contains DirectSalesContext
+    contains PaymentContext
+    contains CommunicationContext
+    contains LeadsContext
+    contains LoyaltyContext
+
+    IdentityAndAccessContext [U, OHS,PL] -> [D] CustomerContext {
+        implementationTechnology = "RESTful HTTP"
+        exposedAggregates = Principal
+    }
+
+    CustomerContext [U] -> [D] VitalityContext {
+    }
+
+    CustomerContext [U] ->  [D, ACL] IndividualLifeContext {
+    }
+
+    CustomerContext [U] -> [D, ACL] CorporateSolutionContext {
+    }
+
+    DirectSalesContext [U] -> [D,ACL] LeadsContext {
+    }
+
+    CorporateSolutionContext [U] -> [D] PaymentContext {
+    }
+
+    IndividualLifeContext [U] -> [D] PaymentContext {
+    }
+}
+
+BoundedContext IdentityAndAccessContext {
+
+    Aggregate Principal {
+        Entity Principal {
+            aggregateRoot
+
+            - PrincipalId id
+            - MobileNumber mobileNumber
+            - EmailAddress emailAddress
+            - Password password
+        }
+
+        enum PrincipalStates {
+            aggregateLifecycle
+            CREATED, ACTIVATED, DEACTIVATED, DELETED
+        }
+
+        ValueObject PrincipalId {}
+
+        ValueObject EmailAddress {}
+
+        ValueObject MobileNumber {}
+
+        ValueObject Password {}
+
+        Service IdentityAndAccessService {
+            void signUp();
+            void verifyEmailAddress();
+            void verifyMobileNumber();
+        }
+
+        DomainEvent EmailAddressVerified {}
+        DomainEvent MobileNumberAddressVerified {}
+    }
+
+   
+}
+
+BoundedContext CustomerContext {
+    implementationTechnology = "Java"
+
+    Aggregate CustomerProfile {
+        responsibilities = "CustomerProfile"
+
+        Entity CustomerProfile {
+            aggregateRoot
+
+            - CustomerProfileId customerProfileId
+            - CustomerPreferences customerPreferences;
+
+            def void createCustomerProfile();
+            def void updateCustomerPreferences();
+
+            Repository CustomerProfileRepository {}
+        }
+
+        enum States {
+            aggregateLifecycle
+            CREATED, ACTIVATED, DEACTIVATED, DELETED
+        }
+
+        ValueObject CustomerProfileId {}
+
+        ValueObject CustomerPreferences {
+            - ClaimNotificationCustomerPreference claimNotificationPreference
+        }
+
+        ValueObject ClaimNotificationCustomerPreference {}
+
+        Service CustomerService {
+            boolean mergeCustomerProfile(@CustomerProfile target, List<@CustomerProfile> source) : write;
+        }
+
+        Command MergeCustomerProfile {}
+        DomainEvent CustomerProfileMerged {}
+    }
+}
+
+BoundedContext VitalityContext {
+    Aggregate VitalityProfile {
+        Entity VitalityProfile {
+            - VitalityProfile vitalityProfileId
+            - CustomerProfileId customerProfileId
+        }
+
+        ValueObject VitalityProfileId {}
+    }
+}
+
+BoundedContext IndividualLifeContext {
+    Aggregate IndividualLifePolicy {
+        Entity IndividualLifePolicy {
+            aggregateRoot
+
+            - IndividualLifePolicyId individualLifePolicyId
+            - PolicyName policyName
+        }
+
+        Entity ILSupplimentaryDocument {
+            - DocumentReceipt documentReceipt
+        }
+
+        ValueObject PolicyName {}
+
+        ValueObject DocumentReceipt {}
+
+        ValueObject IndividualLifePolicyId {}
+
+        ValueObject ILClaimBalance {}
+
+        ValueObject MedicalShortfall {}
+        
+        Service IndividualLifeService {
+            void attachSupplimentaryDocument(@ILSupplimentaryDocument document);
+            void updatePolicyToApproved();
+            @ILClaimBalance calculateClaimBalance();
+            @MedicalShortfall calculateMedicalShortFall();
+            void changeContact();
+        }
+
+        Command ChangeContactCommand {}
+        Command ContactUpdatedEvent {}
+
+        DomainEvent ClaimStatusEvent {}
+    }
+
+    Aggregate AccidentClaim {
+        Entity AccidentClaim {
+            aggregateRoot
+
+            - AccidentClaimId accidentClaimId
+            - List<ClaimDocument> claimDocuments
+            - List<Receipt> receipts;
+            - AccidentInformation accidentInformation
+
+            def @AccidentClaimId draftClaimsOnNewAccident() : write [-> CREATED];
+            def @AccidentClaimId draftClaimsOnExistingAccident(@AccidentClaimId previousAccidentClaim) : write [-> CREATED];
+            def void submitClaim() : write [CREATED -> SUBMITTED];
+            def void discardClaimSubmission() : write [CREATED -> DISCARDED];
+        }
+
+        enum AccidentClaimStatus {
+            aggregateLifecycle
+            CREATED, SUBMITTED, DISCARDED
+        }
+
+        enum ClaimDocumentType {
+            SICK_LEAVE, RECEIPT
+        }
+
+        ValueObject AccidentInformation {
+            Date accidentDate
+            Location accidentLocation
+            InjuryType injuryType
+            BodyInjury bodyInjury
+            boolean isFractured
+            Surgery surgery;
+            Hospitalization hospitalization;
+        }
+
+        ValueObject ClaimDocument {}
+        ValueObject AccidentClaimId {}
+        ValueObject ServiceProvider {}
+        ValueObject Hospitalization {
+            Date hospitalizationDate;
+            Surgery surgery;
+        }
+
+        ValueObject Receipt {
+            TreatmentType treatmentType
+            Currency amount;
+            Date dateOfConsultation;
+            - ServiceProvider provider;
+        }
+        
+    }
+
+    Aggregate MedicalClaim {
+        Entity MedicalClaim {
+            aggregateRoot
+
+            Insured insured
+            PolicyType policyType
+            IllnessDetails illnessDetails
+            ClaimPaymentMethod claimPaymentMethod
+        }
+
+        Service MedicalClaimService {
+            void claimGroupInsurance();
+        }
+
+        DomainEvent Me
+    }
+
+    Aggregate TravelClaim {
+        Entity TravelClaim {
+            aggregateRoot
+
+            Insured insured
+            PolicyType policyType
+            - List<TravelClaimDocument> claimDocuments
+
+            def @TravelClaimId draftTravelClaim() : write [-> CREATED];
+
+            def @TravelClaimId submitTravelClaim() : write [CREATED -> SUBMITTED];
+
+        }
+
+        enum TravelClaimStatus {
+            aggregateLifecycle
+            CREATED, SUBMITTED, DISCARDED
+        }
+
+        enum TravelClaimDocumentType {
+            RECEIPTS, MEDICAL_REPORT, PASSPORT, OTHERS
+        }
+
+        ValueObject TravelClaimId {}
+
+        Entity TravelClaimDocument {
+            - TravelClaimDocumentType documentType
+        }
+
+        Service TravelClaimService {
+            void claimGroupInsurance();
+
+        }
+
+    }
+
+    Aggregate BenefitClaim {
+        Entity BenefitClaim {
+            aggregateRoot
+        }
+    }
+
+    Aggregate BenefitCalculator {
+
+    }
+}
+
+BoundedContext CorporateSolutionContext {
+    
+    Aggregate OutpatientClaim {
+        Entity OutpatientClaim {
+            aggregateRoot
+
+            - OutpatientClaimId outpatientClaimId
+
+            PolicyType policyType
+
+            def @OutpatientClaimId draftClaim() : write [-> CREATED];
+            def void submitClaim() : write [CREATED -> SUBMITTED];
+        }
+
+        enum OutpatientClaimStatus {
+            aggregateLifecycle
+            CREATED, SUBMITTED, DISCARDED
+        }
+
+        ValueObject OutpatientClaimId {}
+    }
+    
+}
+
+BoundedContext DirectSalesContext {
+    
+}
+
+BoundedContext PaymentContext {
+    
+}
+
+BoundedContext CommunicationContext {
+
+}
+
+BoundedContext LeadsContext {
+
+}
+
+BoundedContext LoyaltyContext {
+
+    Aggregate LoyaltyProfile {
+        Entity LoyaltyProfile {
+            aggregateRoot
+            - LoyaltyProfileId id
+        }
+
+        ValueObject LoyaltyProfileId {
+
+        }
+    }
+
+}

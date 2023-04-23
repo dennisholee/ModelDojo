@@ -1,0 +1,341 @@
+ContextMap Insurance {
+    contains Users
+    contains Loyalty
+    contains LoyaltyPlus
+
+
+    Users[U] -> [D]Loyalty {
+        exposedAggregates UserProfile
+    }
+
+    LoyaltyPlus [U] -> [D] Loyalty {
+        exposedAggregates LoyaltyPlusUser, LoyaltyPlusMission, LoyaltyPlusCoupon
+    }
+}
+
+BoundedContext Users {
+    Aggregate UserProfile
+}
+
+BoundedContext MiniGames {
+
+}
+
+BoundedContext Loyalty {
+    type = APPLICATION
+
+    Application {
+
+        Flow OnboardCustomerToLoyalty {
+            command OnboardCustomerToLoyaltyCommand [initiated by "User"] delegates to LoyaltyUser[->LOYALTYUSER_CREATED] emits event LoyaltyUserCreateRequestedEvent x LoyaltyUserCreateRejectedEvent
+            event LoyaltyUserCreateRequestedEvent triggers operation createLoyaltyPlusUser
+            operation createLoyaltyPlusUser emits event CreateLoyaltyPlusUserDoneEvent x CreateLoyaltyPlusUserFailedEvent
+            event CreateLoyaltyPlusUserDoneEvent triggers command ActivateLoyaltyUserCommand 
+            command ActivateLoyaltyUserCommand delegates to LoyaltyUser[LOYALTYUSER_CREATED->LOYALTYUSER_ACTIVATED] emits event LoyaltyUserActivatedEvent
+        }
+
+        Flow MergeAccount {
+            command RequestMergeAccountCommand [initiated by "User"] delegates to LoyaltyUser emits event LoyaltyUserMergeAccountRequestedEvent x LoyaltyUserMergeAccountRejectedEvent
+            event LoyaltyUserMergeAccountRequestedEvent triggers operation mergeLoyaltyPlusUsers
+            operation mergeLoyaltyPlusUsers emits event MergeLoyaltyPlusUsersDoneEvent x MergeLoyaltyPlusUsersFailedEvent
+            event MergeLoyaltyPlusUsersDoneEvent triggers command MergeAccountCommand
+            command MergeAccountCommand delegates to LoyaltyUser emits event LoyaltyUserAccountMergeDoneEvent x LoyaltyUserAccountMergeFailedEvent
+        }
+
+        Flow StartMission {
+            command RequestStartMissionCommand [initiated by "User"] delegates to Mission[->MISSION_CREATED] emits event MissionStartRequestedEvent x MissionStartRejectedEvent
+            event MissionStartRequestedEvent triggers operation startMission
+            operation startMission emits event StartMissionDoneEvent x StartMissionFailedEvent
+            event StartMissionDoneEvent triggers command ActivateMissionCommand
+            command ActivateMissionCommand delegates to Mission[MISSION_CREATED->MISSION_ACTIVATED] emits event MissionActivatedEvent
+        }
+
+        Flow CompleteMission {
+            command RequestCompleteMissionCommand [initiated by "User"] delegates to Mission[MISSION_ACTIVATED->MISSION_COMPLETE_REQUESTED] emits event MissionCompleteRequestedEvent x MissionCompleteRejectedEvent
+            event MissionCompleteRequestedEvent triggers operation completeMission
+            operation completeMission emits event CompleteMissionDoneEvent x CompleteMissionRejectedEvent
+            event CompleteMissionDoneEvent triggers command CompleteMissionCommand
+            command CompleteMissionCommand delegates to Mission[MISSION_COMPLETE_REQUESTED->MISSION_COMPLETED] emits event MissionCompletedEvent
+            // Number of points rewarded?
+        }
+
+        Flow AbortMission {
+            command RequestAbortMissionCommand [initiated by "User"] delegates to Mission[MISSION_ACTIVATED->MISSION_ABORT_REQUESTED] emits event MissionAbortRequestedEvent x MissionAbortRejectedEvent
+            event MissionAbortRequestedEvent triggers operation abortMission
+            operation abortMission emits event AbortMissionDoneEvent x AbortMissionRejectedEvent
+            event AbortMissionDoneEvent triggers command AbortMissionCommand
+            command AbortMissionCommand delegates to Mission [MISSION_ABORT_REQUESTED->MISSION_ABORTED] emits event MissionAbortedEvent
+        }
+
+        Flow AddPoints {
+            command RequestAddPointsCommand[initiated by "User"] delegates to Wallet emits event WalletAddPointsRequestedEvent x WalletAddPointsRejectedEvent
+            event WalletAddPointsRequestedEvent triggers operation addPoints
+            operation addPoints emits event AddPointsDoneEvent x AddPointsFailedEvent
+            event AddPointsDoneEvent triggers command AddPointsCommand
+            command AddPointsCommand delegates to Wallet emits event WalletAddPointsDoneEvent
+        }
+
+        Flow DeductPoints {
+
+        }
+
+        Flow RedeemRewards {
+            command RequestRedeemRewardsCommand[initiated by "User"] emits event CouponRedeemRequestedEvent
+            event CouponRedeemRequestedEvent triggers operation redeemCoupon
+            operation redeemCoupon delegates to Coupon[->CREATED] emits event RedeemCouponDoneEvent x RedeemCouponFailedEvent
+        }
+
+        Command OnboardCustomerToLoyaltyCommand
+        Command RequestMergeAccountCommand
+        Command RequestStartMissionCommand
+        Command MergeAccountCommand
+        Command RequestCompleteMissionCommand
+        Command CompleteMissionCommand
+        Command RequestAbortMissionCommand
+        Command AbortMissionCommand
+
+        Command ActivateLoyaltyUserCommand
+        Command ActivateMissionCommand
+
+        // Add Points
+        Command RequestAddPointsCommand
+        Command AddPointsCommand
+
+        // Rewards
+        Command RequestRedeemRewardsCommand
+
+        Event CreateLoyaltyPlusUserDoneEvent
+        Event CreateLoyaltyPlusUserFailedEvent
+
+        Event MergeLoyaltyPlusUsersDoneEvent
+        Event MergeLoyaltyPlusUsersFailedEvent
+
+        Event CompleteMissionDoneEvent
+        Event CompleteMissionRejectedEvent
+
+        Event AbortMissionDoneEvent
+        Event AbortMissionRejectedEvent
+
+        Event CreateLoyaltyPlusUserRejected
+
+        Event StartMissionDoneEvent
+        Event StartMissionFailedEvent
+
+        // Points
+        Event AddPointsDoneEvent
+        Event AddPointsFailedEvent
+
+        // Rewards
+        Event RedeemCouponDoneEvent
+        Event RedeemCouponFailedEvent
+        
+
+        Service LoyaltyPlusGateway {
+            void createLoyaltyPlusUser(@LoyaltyUser loyaltyUser);
+            void mergeLoyaltyPlusUsers(List<@LoyaltyUser> source, @LoyaltyUser destination);
+            void startMission();
+            void completeMission(@Mission mission);
+            void abortMission(@Mission mission);
+            void addPoints();
+        }
+
+        Service DnAGateway {
+        }
+
+        Service RewardsService {
+            void redeemCoupon(@Wallet wallet, @Coupon coupon);
+        }
+    }
+
+    Aggregate LoyaltyUser {
+        Entity LoyaltyUser {
+            aggregateRoot
+
+            Repository LoyaltyUserRepository {
+                @LoyaltyUser findByUserProfile(@UserProfileId userProfileId);
+            }
+        }
+
+        ValueObject UserProfileId
+        ValueObject LoyaltyUserEventId
+
+        enum LoyaltyUserStatus {
+            aggregateLifecycle
+
+            LOYALTYUSER_CREATED, LOYALTYUSER_ACTIVATED, LOYALTYUSER_DEACTIVATE_REQUESTED, LOYALTYUSER_DEACTIVATED, LOYALTYUSER_MERGE_REQUESTED, LOYALTYUSER_MERGED
+        }
+
+        Service LoyaltyUserService {
+            void mergeLoyaltyUserAccount(List<@LoyaltyUser> source, @LoyaltyUser destination );
+        }
+
+        DomainEvent LoyaltyUserEvent {
+            - @LoyaltyUserEventId loyaltyUserEventId
+            - @LoyaltyUserId loyaltyUserId
+            String requestId
+            Date eventDatetime
+        }
+
+        DomainEvent LoyaltyUserMergeEvent extends LoyaltyUserEvent {
+            - List<@LoyaltyUserId> source
+            - @LoyaltyUserId destination
+        }
+
+        DomainEvent LoyaltyUserCreateRequestedEvent extends LoyaltyUserEvent
+        DomainEvent LoyaltyUserCreateRejectedEvent extends LoyaltyUserEvent
+        DomainEvent LoyaltyUserActivatedEvent extends LoyaltyUserEvent
+        DomainEvent LoyaltyUserMergeAccountRequestedEvent extends LoyaltyUserMergeEvent
+        DomainEvent LoyaltyUserMergeAccountRejectedEvent extends LoyaltyUserMergeEvent
+        DomainEvent LoyaltyUserAccountMergeDoneEvent extends LoyaltyUserMergeEvent
+        DomainEvent LoyaltyUserAccountMergeFailedEvent extends LoyaltyUserMergeEvent
+       
+    }
+
+    Aggregate Mission {
+        Entity Mission {
+            aggregateRoot
+
+            - @MissionId missionId
+            - @LoyaltyUser loyaltyUser
+        }
+
+        enum MissionStatus {
+            aggregateLifecycle
+
+            MISSION_CREATED, MISSION_ACTIVATED, MISSION_COMPLETE_REQUESTED, MISSION_COMPLETED, MISSION_ABORT_REQUESTED, MISSION_ABORTED
+        }
+        
+        Service MissionService {
+            void completeMissionAndGetRewards();
+        }
+
+        ValueObject MissionId 
+
+        DomainEvent MissionStartRequestedEvent
+        DomainEvent MissionStartRejectedEvent
+        DomainEvent MissionActivatedEvent
+
+        DomainEvent MissionCompleteRequestedEvent
+        DomainEvent MissionCompleteRejectedEvent
+        DomainEvent MissionCompletedEvent
+
+        DomainEvent MissionAbortRequestedEvent        
+        DomainEvent MissionAbortRejectedEvent
+        DomainEvent MissionAbortedEvent
+
+    }
+
+    Aggregate Wallet {
+        Entity Wallet {
+            aggregateRoot
+
+            - @WalletId walletId
+            - @LoyaltyUser loyaltyUser
+            - @Points point
+            - List<@Coupon> coupons
+
+            def void awardPoints(@Points points) : write;
+            def void deductPoints(@Points points) : write;
+            def void awardCoupon(@Wallet wallet, @Coupon coupon);
+            
+            def @Points getBalance() : read-only;
+            def List<@Coupon> getCoupons() : read-only;
+
+            Repository WalletRepository {
+                void updatePoints(@Wallet wallet);
+                @Wallet findWallet(@LoyaltyUser loyaltyUser);
+            }
+        }
+
+        Service WalletService {
+            void addPoints(@Wallet wallet, @Points points) : write;
+            void deductPoints(@Wallet wallet, @Points points) : write;
+            @Points getPointsBalance(@Wallet wallet) : read-only;
+        }
+
+        ValueObject WalletId {
+            String walletId
+        }
+
+        ValueObject Points {
+            int pointValue
+
+            // Side effect free functions
+            def Points addPoints(@Points points);
+            def Points deductPoints(@Points points);
+        }
+
+        DomainEvent PointsEvent {
+            - @WalletId walletId
+            - @Points points
+        }
+
+        DomainEvent WalletAddPointsRequestedEvent extends PointsEvent
+        DomainEvent WalletAddPointsRejectedEvent extends PointsEvent
+        DomainEvent WalletAddPointsDoneEvent extends PointsEvent
+        DomainEvent WalletAddPointsFailedEvent extends PointsEvent
+        DomainEvent WalletDeductPointsRequestedEvent extends PointsEvent
+        DomainEvent WalletDeductPointsFailedEvent extends PointsEvent
+    }
+
+    Aggregate Coupon {
+        Entity Coupon {
+            aggregateRoot
+
+            - CouponId couponId
+            - IssueDate issueDate
+            - ExpiryDate expiryDate
+        }
+
+        enum CouponState {
+            aggregateLifecycle
+
+            CREATED
+        }
+
+        ValueObject CouponId
+        ValueObject IssueDate
+        ValueObject ExpiryDate
+
+        Service CouponService {
+            void assignToWallet(@Wallet wallet);
+        }
+
+        DomainEvent CouponRedeemRequestedEvent
+        DomainEvent CouponAssignedToWalletDoneEvent
+        DomainEvent CouponAssignedToWalletFailedEvent
+    }
+}
+
+BoundedContext LoyaltyPlus {
+    type = APPLICATION
+
+    Application {
+
+        Service LoyaltyPlusService {
+            void createLoyaltyPlusUser();
+        }
+    }
+
+    Aggregate LoyaltyPlusUser {
+        Entity LoyaltyPlusUser {
+            aggregateRoot
+
+            - LoyaltyUserId loyaltyUserId
+        }
+
+        ValueObject LoyaltyUserId
+    }
+
+    Aggregate LoyaltyPlusMission {
+        Entity LoyaltyPlusMission {
+            aggregateRoot
+        }
+    }
+
+    Aggregate LoyaltyPlusCoupon {
+        Entity LoyaltyPlusCoupon {
+            aggregateRoot
+        }
+    }
+}
